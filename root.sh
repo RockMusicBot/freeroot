@@ -1,82 +1,62 @@
 #!/bin/sh
 
-ROOTFS_DIR=$(pwd)
+ROOTFS_DIR=$(pwd)/freeroot
+mkdir -p "$ROOTFS_DIR"
 export PATH=$PATH:~/.local/usr/bin
-max_retries=50
-timeout=1
+max_retries=5
+timeout=5
 ARCH=$(uname -m)
 
+# Set architecture
 if [ "$ARCH" = "x86_64" ]; then
   ARCH_ALT=amd64
 elif [ "$ARCH" = "aarch64" ]; then
   ARCH_ALT=arm64
 else
-  printf "Unsupported CPU architecture: ${ARCH}"
+  echo "Unsupported CPU architecture: ${ARCH}"
   exit 1
 fi
 
-if [ ! -e $ROOTFS_DIR/.installed ]; then
-  echo "#######################################################################################"
-  echo "#"
-  echo "#                                      Foxytoux INSTALLER"
-  echo "#"
-  echo "#                           Copyright (C) 2024, RecodeStudios.Cloud"
-  echo "#"
-  echo "#"
-  echo "#######################################################################################"
+# Confirm install
+if [ ! -f "$ROOTFS_DIR/.installed" ]; then
+  echo "Foxytoux INSTALLER"
+  echo "Installing Ubuntu 24.04 LTS in a contained PRoot..."
 
-  read -p "Do you want to install Ubuntu? (YES/no): " install_ubuntu
+  read -p "Continue with installation? (yes/NO): " confirm
+  case $confirm in
+    [yY][eE][sS])
+      echo "[*] Downloading rootfs..."
+      wget -q --tries=$max_retries --timeout=$timeout -O /tmp/rootfs.tar.gz \
+        "http://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04-base-${ARCH_ALT}.tar.gz" || {
+        echo "Download failed."; exit 1; }
+      tar -xf /tmp/rootfs.tar.gz -C "$ROOTFS_DIR"
+      ;;
+    *)
+      echo "Aborted by user."
+      exit 0
+      ;;
+  esac
 fi
 
-case $install_ubuntu in
-  [yY][eE][sS])
-    echo "[*] Downloading Ubuntu 24.04 LTS base system..."
-    wget --tries=$max_retries --timeout=$timeout --no-hsts -O /tmp/rootfs.tar.gz \
-      "http://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04-base-${ARCH_ALT}.tar.gz"
-    tar -xf /tmp/rootfs.tar.gz -C $ROOTFS_DIR
-    ;;
-  *)
-    echo "Skipping Ubuntu installation."
-    ;;
-esac
-
-if [ ! -e $ROOTFS_DIR/.installed ]; then
-  mkdir -p $ROOTFS_DIR/usr/local/bin
-  echo "[*] Downloading PRoot binary for ${ARCH}..."
-  wget --tries=$max_retries --timeout=$timeout --no-hsts -O $ROOTFS_DIR/usr/local/bin/proot "https://raw.githubusercontent.com/foxytouxxx/freeroot/main/proot-${ARCH}"
-
-  while [ ! -s "$ROOTFS_DIR/usr/local/bin/proot" ]; do
-    rm -f $ROOTFS_DIR/usr/local/bin/proot
-    wget --tries=$max_retries --timeout=$timeout --no-hsts -O $ROOTFS_DIR/usr/local/bin/proot "https://raw.githubusercontent.com/foxytouxxx/freeroot/main/proot-${ARCH}"
-    sleep 1
-  done
-
-  chmod 755 $ROOTFS_DIR/usr/local/bin/proot
+# Install proot binary
+if [ ! -x "$ROOTFS_DIR/usr/local/bin/proot" ]; then
+  echo "[*] Installing PRoot..."
+  mkdir -p "$ROOTFS_DIR/usr/local/bin"
+  wget -q -O "$ROOTFS_DIR/usr/local/bin/proot" \
+    "https://raw.githubusercontent.com/foxytouxxx/freeroot/main/proot-${ARCH}"
+  chmod +x "$ROOTFS_DIR/usr/local/bin/proot"
 fi
 
-if [ ! -e $ROOTFS_DIR/.installed ]; then
-  echo "[*] Finalizing installation..."
-  mkdir -p ${ROOTFS_DIR}/etc
-  echo "nameserver 1.1.1.1" > ${ROOTFS_DIR}/etc/resolv.conf
-  echo "nameserver 1.0.0.1" >> ${ROOTFS_DIR}/etc/resolv.conf
-  rm -rf /tmp/rootfs.tar.gz
-  touch $ROOTFS_DIR/.installed
-fi
+# Setup DNS
+echo "nameserver 1.1.1.1" > "$ROOTFS_DIR/etc/resolv.conf"
+echo "nameserver 1.0.0.1" >> "$ROOTFS_DIR/etc/resolv.conf"
 
-CYAN='\e[0;36m'
-WHITE='\e[0;37m'
-RESET_COLOR='\e[0m'
+# Mark as installed
+touch "$ROOTFS_DIR/.installed"
 
-display_gg() {
-  echo -e "${WHITE}___________________________________________________${RESET_COLOR}"
-  echo -e ""
-  echo -e "           ${CYAN}-----> Mission Completed ! <----${RESET_COLOR}"
-}
-
-clear
-display_gg
-
-# Launch PRoot Ubuntu environment
-$ROOTFS_DIR/usr/local/bin/proot \
-  --rootfs="${ROOTFS_DIR}" \
-  -0 -w "/root" -b /dev -b /sys -b /proc -b /etc/resolv.conf --kill-on-exit
+# Launch PRoot safely
+echo "[*] Starting Ubuntu in PRoot..."
+"$ROOTFS_DIR/usr/local/bin/proot" \
+  --rootfs="$ROOTFS_DIR" \
+  -0 -w "/root" -b /dev -b /proc -b /sys -b "$HOME" -b /etc/resolv.conf \
+  /bin/bash || echo "Failed to start bash inside rootfs."
