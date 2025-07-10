@@ -1,6 +1,6 @@
 #!/bin/sh
 
-ROOTFS_DIR=$(pwd)/freeroot
+ROOTFS_DIR="$(pwd)/freeroot"
 mkdir -p "$ROOTFS_DIR"
 export PATH=$PATH:~/.local/usr/bin
 max_retries=5
@@ -13,7 +13,7 @@ if [ "$ARCH" = "x86_64" ]; then
 elif [ "$ARCH" = "aarch64" ]; then
   ARCH_ALT=arm64
 else
-  echo "Unsupported CPU architecture: ${ARCH}"
+  echo "❌ Unsupported CPU architecture: $ARCH"
   exit 1
 fi
 
@@ -22,11 +22,12 @@ if [ ! -f "$ROOTFS_DIR/.installed" ]; then
   echo "Foxytoux INSTALLER"
   echo "Installing Ubuntu 24.04 LTS in a contained PRoot..."
 
-  read -p "Continue with installation? (yes/NO): " confirm
-  case $confirm in
+  read -p "✅ Continue with installation? (yes/NO): " confirm
+  case "$confirm" in
     [yY][eE][sS])
       echo "[*] Downloading Ubuntu base rootfs..."
-      URL="http://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04-base-${ARCH_ALT}.tar.gz"
+
+      URL="https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.2-base-${ARCH_ALT}.tar.gz"
 
       if command -v wget >/dev/null 2>&1; then
         wget --tries=$max_retries --timeout=$timeout -O /tmp/rootfs.tar.gz "$URL" || {
@@ -35,13 +36,14 @@ if [ ! -f "$ROOTFS_DIR/.installed" ]; then
         curl -L --retry $max_retries --max-time $timeout -o /tmp/rootfs.tar.gz "$URL" || {
           echo "❌ Download failed."; exit 1; }
       else
-        echo "❌ Neither wget nor curl is installed."
+        echo "❌ Neither wget nor curl is available."
         exit 1
       fi
 
       echo "[*] Extracting rootfs to $ROOTFS_DIR..."
       tar -xf /tmp/rootfs.tar.gz -C "$ROOTFS_DIR" || {
         echo "❌ Extraction failed."; exit 1; }
+      rm -f /tmp/rootfs.tar.gz
       ;;
     *)
       echo "❌ Aborted by user."
@@ -56,7 +58,7 @@ if [ ! -x "$ROOTFS_DIR/usr/local/bin/proot" ]; then
   mkdir -p "$ROOTFS_DIR/usr/local/bin"
   wget -q -O "$ROOTFS_DIR/usr/local/bin/proot" \
     "https://raw.githubusercontent.com/foxytouxxx/freeroot/main/proot-${ARCH}" || {
-      echo "❌ Failed to download proot."; exit 1; }
+      echo "❌ Failed to download PRoot binary."; exit 1; }
   chmod +x "$ROOTFS_DIR/usr/local/bin/proot"
 fi
 
@@ -69,7 +71,7 @@ echo "nameserver 1.0.0.1" >> "$ROOTFS_DIR/etc/resolv.conf"
 touch "$ROOTFS_DIR/.installed"
 
 # Final message
-echo "[*] Launching Ubuntu in PRoot environment..."
+echo "[*] ✅ Launching Ubuntu in PRoot environment..."
 "$ROOTFS_DIR/usr/local/bin/proot" \
   --rootfs="$ROOTFS_DIR" \
   -0 -w "/root" \
