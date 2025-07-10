@@ -25,14 +25,26 @@ if [ ! -f "$ROOTFS_DIR/.installed" ]; then
   read -p "Continue with installation? (yes/NO): " confirm
   case $confirm in
     [yY][eE][sS])
-      echo "[*] Downloading rootfs..."
-      wget -q --tries=$max_retries --timeout=$timeout -O /tmp/rootfs.tar.gz \
-        "http://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04-base-${ARCH_ALT}.tar.gz" || {
-        echo "Download failed."; exit 1; }
-      tar -xf /tmp/rootfs.tar.gz -C "$ROOTFS_DIR"
+      echo "[*] Downloading Ubuntu base rootfs..."
+      URL="http://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04-base-${ARCH_ALT}.tar.gz"
+
+      if command -v wget >/dev/null 2>&1; then
+        wget --tries=$max_retries --timeout=$timeout -O /tmp/rootfs.tar.gz "$URL" || {
+          echo "❌ Download failed."; exit 1; }
+      elif command -v curl >/dev/null 2>&1; then
+        curl -L --retry $max_retries --max-time $timeout -o /tmp/rootfs.tar.gz "$URL" || {
+          echo "❌ Download failed."; exit 1; }
+      else
+        echo "❌ Neither wget nor curl is installed."
+        exit 1
+      fi
+
+      echo "[*] Extracting rootfs to $ROOTFS_DIR..."
+      tar -xf /tmp/rootfs.tar.gz -C "$ROOTFS_DIR" || {
+        echo "❌ Extraction failed."; exit 1; }
       ;;
     *)
-      echo "Aborted by user."
+      echo "❌ Aborted by user."
       exit 0
       ;;
   esac
@@ -40,23 +52,26 @@ fi
 
 # Install proot binary
 if [ ! -x "$ROOTFS_DIR/usr/local/bin/proot" ]; then
-  echo "[*] Installing PRoot..."
+  echo "[*] Installing PRoot binary..."
   mkdir -p "$ROOTFS_DIR/usr/local/bin"
   wget -q -O "$ROOTFS_DIR/usr/local/bin/proot" \
-    "https://raw.githubusercontent.com/foxytouxxx/freeroot/main/proot-${ARCH}"
+    "https://raw.githubusercontent.com/foxytouxxx/freeroot/main/proot-${ARCH}" || {
+      echo "❌ Failed to download proot."; exit 1; }
   chmod +x "$ROOTFS_DIR/usr/local/bin/proot"
 fi
 
 # Setup DNS
+mkdir -p "$ROOTFS_DIR/etc"
 echo "nameserver 1.1.1.1" > "$ROOTFS_DIR/etc/resolv.conf"
 echo "nameserver 1.0.0.1" >> "$ROOTFS_DIR/etc/resolv.conf"
 
 # Mark as installed
 touch "$ROOTFS_DIR/.installed"
 
-# Launch PRoot safely
-echo "[*] Starting Ubuntu in PRoot..."
+# Final message
+echo "[*] Launching Ubuntu in PRoot environment..."
 "$ROOTFS_DIR/usr/local/bin/proot" \
   --rootfs="$ROOTFS_DIR" \
-  -0 -w "/root" -b /dev -b /proc -b /sys -b "$HOME" -b /etc/resolv.conf \
-  /bin/bash || echo "Failed to start bash inside rootfs."
+  -0 -w "/root" \
+  -b /dev -b /proc -b /sys -b "$HOME" -b /etc/resolv.conf \
+  /bin/bash || echo "❌ Failed to start bash inside rootfs."
